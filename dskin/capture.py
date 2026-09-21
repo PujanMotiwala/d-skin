@@ -128,31 +128,45 @@ def _draw_hud(bgr, st, streak, need, saved, ghost=None):
     return vis
 
 
+class _mute_fd2:
+    """Silence writes to fd 2 for the duration of the block.
+
+    OpenCV's videoio backends log straight to the file descriptor, so neither
+    cv2.setLogLevel nor redirecting sys.stderr suppresses them.
+    """
+
+    def __enter__(self):
+        self._saved = os.dup(2)
+        self._null = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(self._null, 2)
+        return self
+
+    def __exit__(self, *exc):
+        os.dup2(self._saved, 2)
+        os.close(self._null)
+        os.close(self._saved)
+        return False
+
+
 def list_cameras(max_index: int = 4) -> list[dict]:
-    """Probe camera indices so you can pick the right one."""
+    """Probe camera indices so you can pick the right one.
+
+    Probing absent indices is loud on every backend and the errors are expected,
+    so the noise is suppressed -- the returned report is the output.
+    """
     import sys
-    # Probing absent indices is noisy on every backend; the result is the report.
-    try:
-        prev = cv2.getLogLevel()
-        cv2.setLogLevel(0)
-    except Exception:
-        prev = None
     found = []
     for i in range(max_index):
-        cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION) if sys.platform == "darwin" \
-            else cv2.VideoCapture(i)
-        if cap.isOpened():
-            ok, frame = cap.read()
-            if ok and frame is not None:
-                found.append({"index": i,
-                              "size": f"{frame.shape[1]}x{frame.shape[0]}",
-                              "black": bool(frame.max() < 8)})
-        cap.release()
-    if prev is not None:
-        try:
-            cv2.setLogLevel(prev)
-        except Exception:
-            pass
+        with _mute_fd2():
+            cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION) if sys.platform == "darwin" \
+                else cv2.VideoCapture(i)
+            opened = cap.isOpened()
+            ok, frame = cap.read() if opened else (False, None)
+            cap.release()
+        if opened and ok and frame is not None:
+            found.append({"index": i,
+                          "size": f"{frame.shape[1]}x{frame.shape[0]}",
+                          "black": bool(frame.max() < 8)})
     return found
 
 
@@ -163,8 +177,10 @@ def _open(source, width, height):
     backends = [cv2.CAP_AVFOUNDATION, cv2.CAP_ANY] if (
         sys.platform == "darwin" and str(source).isdigit()) else [cv2.CAP_ANY]
     for be in backends:
-        cap = cv2.VideoCapture(idx, be)
-        if cap.isOpened():
+        with _mute_fd2():
+            cap = cv2.VideoCapture(idx, be)
+            opened = cap.isOpened()
+        if opened:
             return cap
         cap.release()
     return None
