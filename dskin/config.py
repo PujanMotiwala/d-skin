@@ -64,7 +64,54 @@ DARK_OUTLIER_SIGMA = 3.0   # drop hair/stubble: very dark vs ROI median.
 # a pose-dependent amount and make "texture" correlate with how straight you sat.
 TEXTURE_SIGMAS_IOD = (0.004, 0.008, 0.016)
 
-# --- reference card -------------------------------------------------------
-CARD_MIN_AREA_FRAC = 0.004   # of full frame
-CARD_MAX_SAT = 0.18          # HSV saturation: a neutral card is unsaturated
-CARD_MAX_TEXTURE = 0.02      # a card is flat
+# --- reference target -----------------------------------------------------
+# Any STABLE neutral object works. Absolute accuracy is not what longitudinal
+# self-comparison needs -- consistency is. White printer paper is a legitimate
+# stopgap: its true reflectance is unknown, so absolute melanin/ITA values are
+# offset, but the offset is CONSTANT, so trends stay valid.
+#
+# Caveats for paper: most printer paper contains optical brighteners that
+# fluoresce under UV-rich light (some LEDs), so it is not spectrally neutral;
+# and paper yellows with age. Use ONE sheet, keep it in a drawer, replace it
+# never. Switch to "gray_card_18" when the card arrives -- and re-ingest the
+# whole history, because absolute values are not comparable across targets.
+REFERENCE_TARGETS = {
+    "gray_card_18": 0.18,
+    "white_balance_card_90": 0.90,
+    "white_paper": 0.85,
+}
+REFERENCE_TARGET = "white_paper"
+
+REFERENCE_MIN_AREA_FRAC = 0.004   # of full frame
+REFERENCE_MAX_SAT = 0.18          # HSV saturation: a neutral target is unsaturated
+REFERENCE_MAX_TEXTURE = 0.02      # and flat
+REFERENCE_MAX_CLIP_FRAC = 0.01    # a blown-out reference carries NO information
+# Back-compat aliases
+CARD_MIN_AREA_FRAC = REFERENCE_MIN_AREA_FRAC
+CARD_MAX_SAT = REFERENCE_MAX_SAT
+CARD_MAX_TEXTURE = REFERENCE_MAX_TEXTURE
+
+
+# --- gate thresholds learned from your own baseline -----------------------
+# `python -m dskin calibrate <baseline_dir>` writes this file; it overrides the
+# defaults above. Shipped thresholds are guesses -- yours are measurements.
+THRESHOLDS_PATH = "data/thresholds.json"
+
+
+def load_learned_thresholds() -> dict:
+    import json, os
+    if not os.path.exists(THRESHOLDS_PATH):
+        return {}
+    try:
+        with open(THRESHOLDS_PATH) as f:
+            d = json.load(f)
+    except Exception:
+        return {}
+    g = globals()
+    for k, v in d.items():
+        if k in g and isinstance(v, (int, float)):
+            g[k] = v
+    return d
+
+
+LEARNED = load_learned_thresholds()

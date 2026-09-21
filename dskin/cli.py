@@ -11,7 +11,7 @@ import os
 import sys
 import datetime as dt
 import pandas as pd
-from . import db, pipeline, experiment
+from . import db, pipeline, experiment, calibrate as _calibrate
 
 IMG_EXT = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff", "*.dng", "*.DNG",
            "*.arw", "*.ARW", "*.cr2", "*.CR2", "*.nef", "*.NEF")
@@ -122,6 +122,10 @@ def cmd_experiment(a) -> int:
     return 0
 
 
+def cmd_calibrate(a) -> int:
+    return _calibrate.run(a.directory, arm=a.arm, write=not a.dry_run)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="dskin", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -146,6 +150,12 @@ def main(argv=None) -> int:
     e.add_argument("--out", default="out/experiment")
     e.add_argument("--overlay-dir", default="out/overlays")
     e.set_defaults(func=cmd_experiment)
+
+    k = sub.add_parser("calibrate", help="learn gate thresholds from your baseline shoot")
+    k.add_argument("directory")
+    k.add_argument("--arm", default="card", choices=pipeline.NORM_ARMS)
+    k.add_argument("--dry-run", action="store_true", help="print only, do not write")
+    k.set_defaults(func=cmd_calibrate)
 
     a = ap.parse_args(argv)
     return a.func(a)

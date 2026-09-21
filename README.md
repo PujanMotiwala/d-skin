@@ -9,27 +9,44 @@ their noise floor, so you can tell a real change from a change in your bathroom.
 
 ## WHAT YOU DO — the short version
 
-### Step 0 — buy one thing (~₹500–1500)
+### Step 0 — grab a sheet of white printer paper (free, today)
 
-An **18% neutral grey card**. Not a ColorChecker Passport (₹10k, overkill for now).
+Any stable neutral object works as the reference. Paper's true reflectance is
+unknown, so your *absolute* melanin/ITA values will be offset — but the offset is
+**constant**, so trends stay valid. That is all longitudinal self-comparison needs.
 
-Why this one thing: a colour-constancy model estimates the *illuminant colour* only.
-It is scale-invariant by construction, so it cannot recover **exposure** — and
-melanin index, ITA and L\* are absolute-reflectance quantities. Worse, illuminant
-estimators read the illuminant from image content, and skin is a strong cue: if your
-face genuinely reddens, the model may "correct" that away. Its error is correlated
-with your signal. The card's error is not.
+Use **one** sheet. Keep it in a drawer. Never swap it.
 
-Without a card the experiment below can measure *variance* but not *bias* — it
-cannot tell "stable" from "stably wrong".
+Two caveats, which is why this is a stopgap and not the answer: most printer paper
+contains optical brighteners that fluoresce under UV-rich light (some LEDs), so it
+is not truly spectrally neutral; and paper yellows with age.
 
-### Step 1 — set your camera (free, 2 minutes)
+**When your grey card arrives**, set `REFERENCE_TARGET = "gray_card_18"` in
+`dskin/config.py` and **re-ingest the whole history** — absolute values are not
+comparable across reference targets.
+
+Why a reference at all, given colour-constancy models exist: those models estimate
+*illuminant chromaticity* only and are scale-invariant by construction, so they
+cannot recover **exposure** — and melanin index, ITA and L\* are absolute-reflectance
+quantities. Worse, illuminant estimators read the illuminant from image content, and
+skin is a strong cue: if your face genuinely reddens, the model may "correct" that
+away. Its error is correlated with your signal. A physical reference's is not.
+
+### Step 1 — lock your camera (free, 2 minutes)
+
+Your phone is fine. The sensor was never the limit — the **ISP** is.
 
 - Manual / Pro mode. **Lock ISO, shutter, white balance and focus.** Write the
-  settings down and use the same ones forever.
+  settings down; use the same ones forever.
 - **RAW/DNG if available.** Otherwise PNG. Never JPEG.
 - **HDR off. Beauty/skin-smoothing off. Scene optimiser off.** Phone ISPs literally
   even out pigmentation and smooth pores — they erase what you are measuring.
+
+If your stock camera app cannot lock white balance, use **Open Camera** (Android,
+free, shoots DNG) or **Halide / ProCam** (iOS).
+
+You do not have to take this on trust: `dskin calibrate` reads EXIF and tells you
+whether your settings actually held constant across the shoot.
 
 ### Step 2 — take 30 photos, once (~20 minutes)
 
@@ -42,6 +59,9 @@ facing the camera, in **every** shot.
 | `lighting/` | Vary the light: move the lamp, dim it, add a second, change bulb. | 10 |
 | `posedist/` | Vary yourself: tilt ±8°, turn, move 3–5 cm closer/further. | 10 |
 
+Keep the paper in frame beside your cheek, flat to the camera, unshadowed, in
+**every** shot — including the `lighting/` and `posedist/` ones.
+
 ```
 myshoot/
 ├── baseline/
@@ -49,11 +69,17 @@ myshoot/
 └── posedist/
 ```
 
-### Step 3 — run one command
+### Step 3 — run two commands
 
 ```bash
-python -m dskin experiment myshoot
+python -m dskin calibrate myshoot/baseline   # learn YOUR thresholds, check EXIF
+python -m dskin experiment myshoot           # the go/no-go test
 ```
+
+`calibrate` writes `data/thresholds.json`, which overrides the shipped gate
+thresholds. The defaults were guessed on a stock portrait; yours are measured on
+your face, your lamp, your phone. It also tells you if auto-exposure was secretly
+still on, and if your reference is clipping.
 
 ### Step 4 — read three numbers
 
@@ -118,8 +144,9 @@ them before pointing it at your own face.
 ## Commands
 
 ```bash
-python -m dskin check   <image>     # one photo: pose, gate result, overlay
-python -m dskin ingest  <dir>       # measure a folder into sqlite
+python -m dskin check     <image>   # one photo: pose, gate result, overlay
+python -m dskin calibrate <dir>     # learn gate thresholds + verify EXIF held
+python -m dskin ingest    <dir>     # measure a folder into sqlite
 python -m dskin experiment <dir>    # the go/no-go test over condition subfolders
 streamlit run app.py                # trends + sanity checks
 ```
@@ -156,6 +183,7 @@ dskin/faces.py       landmarks, pose, ROI masks, overlay
 dskin/color.py       grey-card normalisation, LAB, melanin/erythema/ITA
 dskin/texture.py     scale-adaptive texture metrics
 dskin/quality.py     the capture gate
+dskin/calibrate.py   learn thresholds from your own shoot; EXIF constancy check
 dskin/pipeline.py    one image -> one row
 dskin/experiment.py  stability / probe / pose-confound / verdict
 dskin/db.py          sqlite

@@ -58,3 +58,64 @@ def load_linear_rgb(path: str) -> tuple[np.ndarray, dict]:
 def to_display_u8(lin: np.ndarray) -> np.ndarray:
     """Linear RGB -> 8-bit sRGB, for overlays and contact sheets only."""
     return (linear_to_srgb(lin) * 255).round().astype(np.uint8)
+
+
+# --- capture settings -----------------------------------------------------
+
+_EXIF_WANT = {
+    "ISOSpeedRatings": "iso", "ExposureTime": "exposure_s", "FNumber": "fnumber",
+    "FocalLength": "focal_mm", "WhiteBalance": "wb_mode", "ExposureMode": "exposure_mode",
+    "Model": "camera", "Software": "software", "BrightnessValue": "brightness_ev",
+}
+
+
+def read_capture_settings(path: str) -> dict:
+    """Pull the settings the protocol asks you to lock.
+
+    You cannot tell by looking at a photo whether auto-exposure was really off.
+    EXIF can, and `dskin calibrate` uses it to check your settings actually held
+    constant across a shoot.
+    """
+    out: dict = {}
+    try:
+        from PIL import Image, ExifTags
+        with Image.open(path) as im:
+            raw = im.getexif()
+            if not raw:
+                return out
+            names = {v: k for k, v in ExifTags.TAGS.items()}
+            merged = dict(raw)
+            try:
+                merged.update(dict(raw.get_ifd(0x8769)))  # ExifOffset sub-IFD
+            except Exception:
+                pass
+            for tag, key in _EXIF_WANT.items():
+                tid = names.get(tag)
+                if tid is None or tid not in merged:
+                    continue
+                v = merged[tid]
+                try:
+                    out["exif_" + key] = float(v) if isinstance(v, (int, float)) else (
+                        float(v.numerator) / float(v.denominator)
+                        if hasattr(v, "numerator") else str(v).strip())
+                except Exception:
+                    out["exif_" + key] = str(v)
+    except Exception:
+        pass
+    return out
+
+
+def settings_constancy(rows: list[dict]) -> dict:
+    """Did the locked settings actually stay locked across a shoot?"""
+    keys = [k for k in ("exif_iso", "exif_exposure_s", "exif_fnumber",
+                        "exif_focal_mm", "exif_wb_mode") if any(k in r for r in rows)]
+    report: dict = {}
+    for k in keys:
+        vals = [r[k] for r in rows if k in r and r[k] is not None]
+        if not vals:
+            continue
+        uniq = sorted(set(map(str, vals)))
+        report[k] = {"n_distinct": len(uniq),
+                     "values": uniq[:6],
+                     "constant": len(uniq) == 1}
+    return report

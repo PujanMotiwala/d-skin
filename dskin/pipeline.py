@@ -30,7 +30,7 @@ def _exclude_pixels(L: np.ndarray, mask: np.ndarray) -> tuple[np.ndarray, dict]:
                   "excl_dark": float(dark.sum() / n)}
 
 
-def analyze(path: str, arm: str = "card", card_reflectance: float = 0.18,
+def analyze(path: str, arm: str = "card", card_reflectance: float | None = None,
             overlay_dir: str | None = None) -> dict:
     """Full measurement for one photo under one normalisation arm."""
     if arm not in NORM_ARMS:
@@ -44,6 +44,8 @@ def analyze(path: str, arm: str = "card", card_reflectance: float = 0.18,
         "path": path, "image_id": os.path.basename(path), "arm": arm,
         "width": meta["width"], "height": meta["height"],
         "source": meta["source"], "bit_depth": meta["bit_depth"],
+        "reference_target": C.REFERENCE_TARGET,
+        **imageio.read_capture_settings(path),
     }
     if face is None:
         row.update(passed=0, reject_reasons="no_face_detected")
@@ -58,16 +60,24 @@ def analyze(path: str, arm: str = "card", card_reflectance: float = 0.18,
         union |= m
 
     # --- normalisation arm ------------------------------------------------
-    card = color.find_gray_card(lin, exclude_box=face["bbox"])
+    card = color.find_reference(lin, exclude_box=face["bbox"])
     row["card_found"] = int(card is not None)
     if card:
         row["card_rgb"] = ",".join(f"{v:.5f}" for v in card["rgb"])
+        row["card_clip_frac"] = card["clip_frac"]
 
     if arm == "card":
         if card is None:
-            row.update(passed=0, reject_reasons="card_required_but_not_found")
+            row.update(passed=0, reject_reasons="reference_target_not_found")
             return row
-        work, gain = color.normalize_with_card(lin, card["rgb"], card_reflectance)
+        # A blown-out reference carries no information: the gain it implies is
+        # a floor, not a measurement, and silently under-corrects every frame.
+        if card["clip_frac"] > C.REFERENCE_MAX_CLIP_FRAC:
+            row.update(passed=0, reject_reasons=(
+                f"reference_clipped({card['clip_frac']:.3f}>"
+                f"{C.REFERENCE_MAX_CLIP_FRAC}); expose down or use a darker target"))
+            return row
+        work, gain = color.normalize_with_reference(lin, card["rgb"], card_reflectance)
     elif arm == "grayworld":
         work, gain = color.normalize_gray_world(lin, union)
     else:

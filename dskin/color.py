@@ -6,12 +6,15 @@ from . import config as C
 
 # --- reference card -------------------------------------------------------
 
-def find_gray_card(lin: np.ndarray, exclude_box=None) -> dict | None:
-    """Locate a neutral grey card: a large, flat, unsaturated quad.
+def find_reference(lin: np.ndarray, exclude_box=None) -> dict | None:
+    """Locate the reference target: a large, flat, unsaturated region.
 
-    Returns dict with bbox and the card's mean linear RGB, or None. The card's
-    error is independent of your skin, which is exactly why it beats estimating
-    the illuminant from the face itself.
+    Works for a grey card, a white-balance card, or a sheet of printer paper --
+    anything neutral and STABLE. Its error is independent of your skin, which is
+    exactly why it beats estimating the illuminant from the face itself.
+
+    Returns bbox, mean linear RGB, and the clipped fraction. A blown-out
+    reference carries no information, so the caller must check `clip_frac`.
     """
     h, w = lin.shape[:2]
     disp = np.clip(lin ** (1 / 2.2), 0, 1)
@@ -50,26 +53,38 @@ def find_gray_card(lin: np.ndarray, exclude_box=None) -> dict | None:
     sel = cv2.erode(sel.astype(np.uint8), np.ones((11, 11), np.uint8)).astype(bool)
     if sel.sum() < 200:
         return None
+    px = lin[sel]
     return {
         "bbox": [int(stats[best, cv2.CC_STAT_LEFT]), int(stats[best, cv2.CC_STAT_TOP]),
                  int(stats[best, cv2.CC_STAT_WIDTH]), int(stats[best, cv2.CC_STAT_HEIGHT])],
-        "rgb": lin[sel].mean(axis=0).astype(float).tolist(),
+        "rgb": px.mean(axis=0).astype(float).tolist(),
         "n_px": int(sel.sum()),
+        "clip_frac": float((px.max(axis=1) >= 0.995).mean()),
     }
 
 
-def normalize_with_card(lin: np.ndarray, card_rgb, card_reflectance: float = 0.18):
+# Back-compat alias
+find_gray_card = find_reference
+
+
+def normalize_with_reference(lin: np.ndarray, card_rgb, reflectance: float | None = None):
     """White-balance AND exposure-normalise so the card reads its true reflectance.
 
     This is the step a colour-constancy model cannot do: AWB recovers illuminant
     chromaticity only and is scale-invariant, so it leaves absolute level — and
     therefore melanin index and L* — uncorrected.
     """
+    if reflectance is None:
+        reflectance = C.REFERENCE_TARGETS[C.REFERENCE_TARGET]
     card = np.asarray(card_rgb, dtype=np.float64)
     if np.any(card <= 1e-6):
-        raise ValueError("card patch too dark to normalise against")
-    gain = card_reflectance / card
+        raise ValueError("reference patch too dark to normalise against")
+    gain = reflectance / card
     return (lin * gain[None, None, :]).astype(np.float32), gain.tolist()
+
+
+# Back-compat alias
+normalize_with_card = normalize_with_reference
 
 
 def normalize_gray_world(lin: np.ndarray, mask: np.ndarray | None = None):

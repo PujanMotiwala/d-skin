@@ -12,17 +12,21 @@ import sys
 import numpy as np
 import cv2
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 rng = np.random.default_rng(7)
 
 
-def add_card(bgr: np.ndarray, reflectance: float = 0.18) -> np.ndarray:
+def add_card(bgr: np.ndarray, reflectance: float | None = None) -> np.ndarray:
     """Paste a neutral grey card into a corner, in LINEAR terms."""
+    if reflectance is None:
+        from dskin import config as C
+        reflectance = C.REFERENCE_TARGETS[C.REFERENCE_TARGET]
     out = bgr.copy()
     h, w = out.shape[:2]
     ch, cw = int(0.16 * h), int(0.16 * h)
     y0, x0 = int(0.72 * h), int(0.04 * w)
-    srgb = (reflectance ** (1 / 2.4) * (1.055) - 0.055)
-    val = np.clip(srgb, 0, 1) * 255
+    val = np.clip(reflectance ** (1 / 2.2), 0, 1) * 255
     out[y0:y0 + ch, x0:x0 + cw] = val
     return out
 
@@ -40,7 +44,7 @@ def perturb(bgr: np.ndarray, kind: str, i: int) -> np.ndarray:
         # colour-constancy model cannot recover: AWB is scale-invariant.
         warm = rng.uniform(-1, 1)
         gains = np.array([1 - 0.16 * warm, 1.0, 1 + 0.16 * warm], np.float32)  # BGR
-        lin *= gains[None, None, :] * rng.uniform(0.75, 1.30)
+        lin *= gains[None, None, :] * rng.uniform(0.78, 1.12)
 
     elif kind == "posedist":
         h, w = lin.shape[:2]
