@@ -1,0 +1,10 @@
+# Personal facial images NEVER go in git.
+data/images/
+data/raw/
+data/*.db
+data/models/
+out/
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
