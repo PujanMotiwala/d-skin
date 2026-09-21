@@ -38,6 +38,23 @@ def calibrate(rows: list[dict]) -> tuple[dict, list[str]]:
         thr[f"MAX_{name.upper()}_DEG"] = round(min(hi, max(3.0, _pct(vals, 90, lo) * 1.2)), 1)
 
     iod = [r["iod_px"] for r in ok]
+    # Physical scale, anchored on a 63 mm population-mean IPD. This decides which
+    # metrics are even resolvable -- a laptop webcam can do colour but not texture.
+    pm = float(np.mean(iod)) / 63.0
+    notes.append(f"Scale: {pm:.1f} px/mm (mean IOD {np.mean(iod):.0f} px).")
+    if pm < 2:
+        notes.append("  TOO LOW for anything. Fill much more of the frame with your face.")
+    elif pm < 10:
+        notes.append("  Colour metrics (melanin, erythema, ITA) are fine at this scale.")
+        notes.append("  TEXTURE metrics are NOT resolvable -- mid-band texture needs ~10 px/mm,")
+        notes.append("  pore-scale ~25. Typical of a laptop webcam. Restrict your primary")
+        notes.append("  endpoints to colour, or shoot closer / on a phone.")
+    elif pm < 25:
+        notes.append("  Colour and mid-band texture are resolvable; pore-scale (~25 px/mm)")
+        notes.append("  is not. Good enough for most of what you want.")
+    else:
+        notes.append("  Ample for colour, texture and pore-scale metrics.")
+
     cv = float(np.std(iod) / np.mean(iod)) if np.mean(iod) else 0.0
     notes.append(f"Apparent face size varies {cv*100:.1f}% across the shoot "
                  f"(iod {np.min(iod):.0f}-{np.max(iod):.0f} px).")

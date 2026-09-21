@@ -48,6 +48,51 @@ free, shoots DNG) or **Halide / ProCam** (iOS).
 You do not have to take this on trust: `dskin calibrate` reads EXIF and tells you
 whether your settings actually held constant across the shoot.
 
+### Step 1b — let the app hold the shutter for you
+
+```bash
+python -m dskin capture --shots 10 --out myshoot/baseline
+```
+
+The camera runs continuously and the shutter fires **only** when pose, sharpness,
+exposure and the reference target are all good *and have held steady for 8 frames*.
+A live checklist shows you which condition is failing, so you correct it in real
+time instead of discovering it a week later.
+
+Pass a previous photo to `--enroll` and it also checks alignment against that
+frame, so day 200 is framed like day 1:
+
+```bash
+python -m dskin capture --enroll data/images/<your_first_good_shot>.png
+```
+
+Needs `pip install opencv-python` (not `-headless`) for the live preview; it runs
+headless with console status otherwise.
+
+### Which camera?
+
+| Setup | px/mm | Colour metrics | Texture metrics |
+|---|---|---|---|
+| MacBook 1080p @ 50 cm | 2.5 | yes | **no** |
+| MacBook 1080p @ 30 cm | 4.2 | yes | **no** |
+| Phone 12 MP, face fills frame @ 30 cm | 29 | yes | yes |
+
+Colour metrics need ~2 px/mm, mid-band texture ~10, pore-scale ~25.
+
+So a **laptop webcam is a legitimate V1 device for pigmentation / erythema / ITA**,
+and useless for texture. It is also a genuinely good capture platform — it sits in
+the same place every day and the screen gives you live feedback.
+
+Two things to know if you use it. First, macOS generally will **not** let you lock
+exposure and white balance on the built-in camera; the reference target absorbs most
+of that drift, which is exactly why the reference matters more here, not less. What
+it cannot undo is the ISP's *nonlinear* tone mapping, since a global gain correction
+is linear by construction. Second, you are stuck at low px/mm — so pick colour
+endpoints and ignore the texture columns.
+
+`dskin capture` and `dskin calibrate` both print your actual px/mm and tell you
+which metrics are resolvable, so you do not have to guess from this table.
+
 ### Step 2 — take 30 photos, once (~20 minutes)
 
 Windowless room, at night, one lamp. Grey card held beside your cheek, in frame,
@@ -144,6 +189,7 @@ them before pointing it at your own face.
 ## Commands
 
 ```bash
+python -m dskin capture             # live gated capture; shutter fires when good
 python -m dskin check     <image>   # one photo: pose, gate result, overlay
 python -m dskin calibrate <dir>     # learn gate thresholds + verify EXIF held
 python -m dskin ingest    <dir>     # measure a folder into sqlite
@@ -182,7 +228,8 @@ dskin/imageio.py     RAW/LDR -> linear RGB
 dskin/faces.py       landmarks, pose, ROI masks, overlay
 dskin/color.py       grey-card normalisation, LAB, melanin/erythema/ITA
 dskin/texture.py     scale-adaptive texture metrics
-dskin/quality.py     the capture gate
+dskin/quality.py     the capture gate (post-hoc)
+dskin/capture.py     the capture gate (live) -- shutter fires only when good
 dskin/calibrate.py   learn thresholds from your own shoot; EXIF constancy check
 dskin/pipeline.py    one image -> one row
 dskin/experiment.py  stability / probe / pose-confound / verdict

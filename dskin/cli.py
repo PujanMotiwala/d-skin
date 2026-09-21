@@ -11,7 +11,7 @@ import os
 import sys
 import datetime as dt
 import pandas as pd
-from . import db, pipeline, experiment, calibrate as _calibrate
+from . import db, pipeline, experiment, calibrate as _calibrate, capture as _capture
 
 IMG_EXT = ("*.jpg", "*.jpeg", "*.png", "*.tif", "*.tiff", "*.dng", "*.DNG",
            "*.arw", "*.ARW", "*.cr2", "*.CR2", "*.nef", "*.NEF")
@@ -122,6 +122,12 @@ def cmd_experiment(a) -> int:
     return 0
 
 
+def cmd_capture(a) -> int:
+    return _capture.run(a.source, outdir=a.out, n_shots=a.shots,
+                        hold_frames=a.hold, width=a.width, height=a.height,
+                        enroll=a.enroll)
+
+
 def cmd_calibrate(a) -> int:
     return _calibrate.run(a.directory, arm=a.arm, write=not a.dry_run)
 
@@ -150,6 +156,19 @@ def main(argv=None) -> int:
     e.add_argument("--out", default="out/experiment")
     e.add_argument("--overlay-dir", default="out/overlays")
     e.set_defaults(func=cmd_experiment)
+
+    p = sub.add_parser("capture", help="live gated capture: shutter fires only when good")
+    p.add_argument("--source", default="0",
+                   help="camera index (0), a video file, or a folder of images")
+    p.add_argument("--out", default="data/images")
+    p.add_argument("--shots", type=int, default=3)
+    p.add_argument("--hold", type=int, default=8,
+                   help="consecutive good frames required before the shutter fires")
+    p.add_argument("--enroll", default=None,
+                   help="a previous photo to align against (keeps day 200 framed like day 1)")
+    p.add_argument("--width", type=int, default=3840)
+    p.add_argument("--height", type=int, default=2160)
+    p.set_defaults(func=cmd_capture)
 
     k = sub.add_parser("calibrate", help="learn gate thresholds from your baseline shoot")
     k.add_argument("directory")
