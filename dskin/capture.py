@@ -128,6 +128,48 @@ def _draw_hud(bgr, st, streak, need, saved, ghost=None):
     return vis
 
 
+def list_cameras(max_index: int = 4) -> list[dict]:
+    """Probe camera indices so you can pick the right one."""
+    import sys
+    # Probing absent indices is noisy on every backend; the result is the report.
+    try:
+        prev = cv2.getLogLevel()
+        cv2.setLogLevel(0)
+    except Exception:
+        prev = None
+    found = []
+    for i in range(max_index):
+        cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION) if sys.platform == "darwin" \
+            else cv2.VideoCapture(i)
+        if cap.isOpened():
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                found.append({"index": i,
+                              "size": f"{frame.shape[1]}x{frame.shape[0]}",
+                              "black": bool(frame.max() < 8)})
+        cap.release()
+    if prev is not None:
+        try:
+            cv2.setLogLevel(prev)
+        except Exception:
+            pass
+    return found
+
+
+def _open(source, width, height):
+    """Open a camera, preferring AVFoundation on macOS."""
+    import sys
+    idx = int(source) if str(source).isdigit() else source
+    backends = [cv2.CAP_AVFOUNDATION, cv2.CAP_ANY] if (
+        sys.platform == "darwin" and str(source).isdigit()) else [cv2.CAP_ANY]
+    for be in backends:
+        cap = cv2.VideoCapture(idx, be)
+        if cap.isOpened():
+            return cap
+        cap.release()
+    return None
+
+
 def _frames(source, width, height):
     """Yield BGR frames from a camera index, a video file, or a folder of images."""
     if isinstance(source, str) and os.path.isdir(source):
@@ -137,9 +179,16 @@ def _frames(source, width, height):
             if img is not None:
                 yield img
         return
-    cap = cv2.VideoCapture(int(source) if str(source).isdigit() else source)
-    if not cap.isOpened():
-        raise RuntimeError(f"cannot open camera/source {source!r}")
+    cap = _open(source, width, height)
+    if cap is None:
+        import sys
+        msg = [f"cannot open camera/source {source!r}"]
+        if sys.platform == "darwin":
+            msg += ["On macOS the terminal app needs camera access:",
+                    "  System Settings > Privacy & Security > Camera > enable your",
+                    "  terminal (Terminal / iTerm / VS Code), then restart it.",
+                    "Run `python -m dskin capture --list` to see available cameras."]
+        raise RuntimeError("\n  ".join(msg))
     if str(source).isdigit():
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
@@ -149,10 +198,22 @@ def _frames(source, width, height):
         got = (cap.get(cv2.CAP_PROP_FRAME_WIDTH), cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         print(f"  camera opened at {int(got[0])}x{int(got[1])}")
     try:
+        blackrun = 0
         while True:
             ok, frame = cap.read()
             if not ok:
                 break
+            # A camera that opens but returns black frames is the classic macOS
+            # permission failure -- it fails silently rather than erroring.
+            if frame.max() < 8:
+                blackrun += 1
+                if blackrun == 15:
+                    print("\n  Camera is returning BLACK frames. On macOS this almost"
+                          "\n  always means the terminal lacks camera permission:"
+                          "\n  System Settings > Privacy & Security > Camera, enable"
+                          "\n  your terminal app, then restart it.\n")
+            else:
+                blackrun = 0
             yield frame
     finally:
         cap.release()

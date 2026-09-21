@@ -123,6 +123,17 @@ def cmd_experiment(a) -> int:
 
 
 def cmd_capture(a) -> int:
+    if a.list:
+        cams = _capture.list_cameras()
+        if not cams:
+            print("No cameras found. On macOS, grant your terminal camera access in")
+            print("System Settings > Privacy & Security > Camera, then restart it.")
+            return 1
+        print("Available cameras:")
+        for c_ in cams:
+            note = "  (BLACK FRAMES - check camera permission)" if c_["black"] else ""
+            print(f"  --source {c_['index']}   {c_['size']}{note}")
+        return 0
     return _capture.run(a.source, outdir=a.out, n_shots=a.shots,
                         hold_frames=a.hold, width=a.width, height=a.height,
                         enroll=a.enroll)
@@ -166,6 +177,7 @@ def main(argv=None) -> int:
                    help="consecutive good frames required before the shutter fires")
     p.add_argument("--enroll", default=None,
                    help="a previous photo to align against (keeps day 200 framed like day 1)")
+    p.add_argument("--list", action="store_true", help="probe and list cameras, then exit")
     p.add_argument("--width", type=int, default=3840)
     p.add_argument("--height", type=int, default=2160)
     p.set_defaults(func=cmd_capture)
